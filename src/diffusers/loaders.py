@@ -330,7 +330,7 @@ class TextualInversionLoaderMixin:
                 self.text_encoder.resize_token_embeddings(len(self.tokenizer))
                 self.text_encoder.get_input_embeddings().weight.data[token_id] = embedding
         else:
-            if token in self.tokenizer.token_map():
+            if token in self.tokenizer.token_map:
                 # If user has allowed replacement and the token exists, we need to
                 # remove all existing tokens associated with the old embbedding and
                 # upddate with the new ones
