@@ -278,20 +278,23 @@ class TextualInversionLoaderMixin:
             for token, embedding_path in embedding_path_dict_or_list.items():
                 embedding_dict = torch.load(embedding_path, map_location=self.text_encoder.device)
                 embedding, is_multi_vec_token = self._extract_embedding_from_dict(embedding_dict)
+
+                self._validate_token_update(token, allow_replacement, is_multi_vec_token)
+                self.add_textual_inversion_embedding(token, embedding)
         elif isinstance(embedding_path_dict_or_list, list):
             for embedding_path in embedding_path_dict_or_list:
                 embedding_dict = torch.load(embedding_path, map_location=self.text_encoder.device)
                 token = self._extract_token_from_dict(embedding_dict)
                 embedding, is_multi_vec_token = self._extract_embedding_from_dict(embedding_dict)
+
+                self._validate_token_update(token, allow_replacement, is_multi_vec_token)
+                self.add_textual_inversion_embedding(token, embedding)
         else:
             raise ValueError(
                 f"Type {type(embedding_path_dict_or_list)} is invalid. The value passed to `embedding_path_dict_or_list` "
                 "must be a dictionary that maps a token to it's embedding file path "
                 "or a list of paths to embedding files containing embedding dictionaries."
             )
-
-        self._validate_token_update(token, allow_replacement, is_multi_vec_token)
-        self.add_textual_inversion_embedding(token, embedding)
 
     def add_textual_inversion_embedding(self, token: str, embedding: torch.Tensor):
         r"""
@@ -384,6 +387,7 @@ class TextualInversionLoaderMixin:
             # If the embedding has more than one dimension,
             # We need to ensure the tokenizer is a MultiTokenTokenizer
             # because there is branching logic that depends on that class
+            print(f"Tokenizer class: ", type(self.tokenizer))
             if not isinstance(self.tokenizer, MultiTokenCLIPTokenizer):
                 raise ValueError(
                     f"{self.__class__.__name__} requires `self.tokenizer` of type `MultiTokenCLIPTokenizer` for loading embeddings with more than one dimension."
