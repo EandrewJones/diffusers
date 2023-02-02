@@ -11,11 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import boto3
+from io import BytesIO
 import copy
 import random
 import os
 from collections import defaultdict
-from typing import Callable, Dict, Union, List
+from functools import lru_cache
+from typing import Callable, Dict, Optional, Union, List
+from urllib.parse import urlparse
 
 import torch
 from transformers import PreTrainedModel, PreTrainedTokenizer, CLIPTokenizer
@@ -254,7 +258,10 @@ class TextualInversionLoaderMixin:
     """
 
     def load_textual_inversion_embeddings(
-        self, embedding_path_dict_or_list: Union[Dict[str, str], List[Dict[str, str]]], allow_replacement: bool = False
+        self,
+        embedding_path_dict_or_list: Union[Dict[str, str], List[Dict[str, str]]],
+        allow_replacement: bool = False,
+        boto3_session: Optional["boto3.Session"] = None,
     ):
         r"""
         Loads textual inversion embeddings and adds them to the tokenizer's vocabulary and the text encoder's embeddings.
@@ -267,6 +274,12 @@ class TextualInversionLoaderMixin:
                     - `embedding`: path to the embedding of the token to be added to the text encoder's embedding matrix
                 The list must contain paths to embedding dictionaries where the keys are the tokens and the
                 values are the embeddings (same as above dictionary definition).
+            allow_replacement (`bool`, *optional*, defaults to `False`):
+                Whether to allow replacement of existing tokens in the tokenizer's vocabulary. If `False`
+                and a token is already in the vocabulary, an error will be raised.
+            boto3_session (`boto3.Session`, *optional*):
+                Boto3 session to use to load the embeddings from S3. If not provided and loading from s3, will use the default boto3 credential.
+                See https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html for more details.
 
         Returns:
             None
@@ -274,16 +287,25 @@ class TextualInversionLoaderMixin:
         # Validate that inheriting class instance contains required attributes
         self._validate_method_call(self.load_textual_inversion_embeddings)
 
+        if boto3_session:
+            self.boto3_session = boto3_session
+
         if isinstance(embedding_path_dict_or_list, dict):
             for token, embedding_path in embedding_path_dict_or_list.items():
-                embedding_dict = torch.load(embedding_path, map_location=self.text_encoder.device)
+                if embedding_path.startswith("s3://"):
+                    embedding_dict = self._load_from_s3(embedding_path)
+                else:
+                    embedding_dict = torch.load(embedding_path, map_location=self.text_encoder.device)
                 embedding, is_multi_vec_token = self._extract_embedding_from_dict(embedding_dict)
 
                 self._validate_token_update(token, allow_replacement, is_multi_vec_token)
                 self.add_textual_inversion_embedding(token, embedding)
         elif isinstance(embedding_path_dict_or_list, list):
             for embedding_path in embedding_path_dict_or_list:
-                embedding_dict = torch.load(embedding_path, map_location=self.text_encoder.device)
+                if embedding_path.startswith("s3://"):
+                    embedding_dict = self._load_from_s3(embedding_path)
+                else:
+                    embedding_dict = torch.load(embedding_path, map_location=self.text_encoder.device)
                 token = self._extract_token_from_dict(embedding_dict)
                 embedding, is_multi_vec_token = self._extract_embedding_from_dict(embedding_dict)
 
@@ -347,19 +369,19 @@ class TextualInversionLoaderMixin:
                 # on update
                 self.tokenizer.token_map.pop(token)
 
-                # Update token with new embedding
-                embedding_dims = len(embedding.shape)
-                num_vec_per_token = 1 if embedding_dims == 1 else embedding.shape[0]
+            # Update token with new embedding
+            embedding_dims = len(embedding.shape)
+            num_vec_per_token = 1 if embedding_dims == 1 else embedding.shape[0]
 
-                self.tokenizer.add_placeholder_tokens(token, num_vec_per_token=num_vec_per_token)
-                self.text_encoder.resize_token_embeddings(len(self.tokenizer))
-                token_ids = self.tokenizer.encode(token, add_special_tokens=False)
+            self.tokenizer.add_placeholder_tokens(token, num_vec_per_token=num_vec_per_token)
+            self.text_encoder.resize_token_embeddings(len(self.tokenizer))
+            token_ids = self.tokenizer.encode(token, add_special_tokens=False)
 
-                if embedding_dims > 1:
-                    for i, token_id in enumerate(token_ids):
-                        self.text_encoder.get_input_embeddings().weight.data[token_id] = embedding[i]
-                else:
-                    self.text_encoder.get_input_embeddings().weight.data[token_ids] = embedding
+            if embedding_dims > 1:
+                for i, token_id in enumerate(token_ids):
+                    self.text_encoder.get_input_embeddings().weight.data[token_id] = embedding[i]
+            else:
+                self.text_encoder.get_input_embeddings().weight.data[token_ids] = embedding
 
     def _extract_embedding_from_dict(self, embedding_dict: Dict[str, str]) -> torch.Tensor:
         r"""
@@ -387,7 +409,6 @@ class TextualInversionLoaderMixin:
             # If the embedding has more than one dimension,
             # We need to ensure the tokenizer is a MultiTokenTokenizer
             # because there is branching logic that depends on that class
-            print(f"Tokenizer class: ", type(self.tokenizer))
             if not isinstance(self.tokenizer, MultiTokenCLIPTokenizer):
                 raise ValueError(
                     f"{self.__class__.__name__} requires `self.tokenizer` of type `MultiTokenCLIPTokenizer` for loading embeddings with more than one dimension."
@@ -470,6 +491,31 @@ class TextualInversionLoaderMixin:
                 raise ValueError(
                     f"Token {token} already in tokenizer vocabulary. Please choose a different token name."
                 )
+
+    @lru_cache
+    def _load_from_s3(self, s3_uri):
+        r"""Loads a file from the given s3 URI into working memory.
+
+        Arguments:
+            s3_uri (`str`):
+                The s3 URI to load the embedding file from.
+
+        Returns:
+            `torch.Tensor`:
+                The embedding to be added to the text encoder's embedding matrix.
+
+        """
+        assert s3_uri[:5] == "s3://", f"Invalid s3 URI: {s3_uri}"
+
+        s3_client = self.boto3_session.client("s3") if self.boto3_session else boto3.client("s3")
+
+        # Parse URI for bucket and key
+        s3_bucket, s3_key = urlparse(s3_uri).netloc, urlparse(s3_uri).path.lstrip("/")
+
+        with BytesIO() as f:
+            s3_client.download_fileobj(Bucket=s3_bucket, Key=s3_key, Fileobj=f)
+            f.seek(0)
+            return torch.load(f, map_location=self.text_encoder.device)
 
 
 class MultiTokenCLIPTokenizer(CLIPTokenizer):

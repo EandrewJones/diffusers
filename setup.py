@@ -80,6 +80,7 @@ from setuptools import find_packages, setup
 _deps = [
     "Pillow",  # keep the PIL.Image.Resampling deprecation away
     "accelerate>=0.11.0",
+    "boto3",
     "black==22.12",
     "datasets",
     "filelock",
