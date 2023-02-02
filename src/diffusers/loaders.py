@@ -355,14 +355,21 @@ class TextualInversionLoaderMixin:
                 # If user has allowed replacement and the token exists, we need to
                 # remove all existing tokens associated with the old embbedding and
                 # upddate with the new ones
+                indices_to_remove = []
                 for token_to_remove in self.tokenizer.token_map[token]:
-                    token_id_to_remove = self.tokenizer.get_added_vocab()[token_to_remove]
+                    indices_to_remove.append(self.tokenizer.get_added_vocab()[token_to_remove])
 
-                    # Remove old  tokens from tokenizer and text encoder
+                    # Remove old  tokens from tokenizer
                     self.tokenizer.added_tokens_encoder.pop(token_to_remove)
-                    del self.text_encoder.get_input_embeddings().weight.data[token_id_to_remove]
-                    # Downsize text encoder
-                    self.text_encoder.resize_token_embeddings(len(self.tokenizer))
+
+                # Remove old tokens from text encoder
+                token_embeds = self.text_encoder.get_input_embeddings().weight.data
+                indices_to_keep = torch.arange(0, token_embeds.shape[0])
+                indices_to_keep[indices_to_keep != indices_to_remove].squeeze()
+                token_embeds = token_embeds[indices_to_keep]
+
+                # Downsize text encoder
+                self.text_encoder.resize_token_embeddings(len(self.tokenizer))
 
                 # Remove token from map so MultiTokenCLIPTokenizer doesn't complain
                 # on update
