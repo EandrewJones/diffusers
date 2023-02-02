@@ -287,8 +287,7 @@ class TextualInversionLoaderMixin:
         # Validate that inheriting class instance contains required attributes
         self._validate_method_call(self.load_textual_inversion_embeddings)
 
-        if boto3_session:
-            self.boto3_session = boto3_session
+        self.boto3_session = boto3_session
 
         if isinstance(embedding_path_dict_or_list, dict):
             for token, embedding_path in embedding_path_dict_or_list.items():
