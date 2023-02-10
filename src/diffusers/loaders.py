@@ -362,10 +362,13 @@ class TextualInversionLoaderMixin:
                     # Remove old  tokens from tokenizer
                     self.tokenizer.added_tokens_encoder.pop(token_to_remove)
 
+                # Convert indices to remove to tensor
+                indices_to_remove = torch.LongTensor(indices_to_remove)
+
                 # Remove old tokens from text encoder
                 token_embeds = self.text_encoder.get_input_embeddings().weight.data
                 indices_to_keep = torch.arange(0, token_embeds.shape[0])
-                indices_to_keep[indices_to_keep != indices_to_remove].squeeze()
+                indices_to_keep = indices_to_keep[indices_to_keep != indices_to_remove].squeeze()
                 token_embeds = token_embeds[indices_to_keep]
 
                 # Downsize text encoder
