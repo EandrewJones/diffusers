@@ -6,12 +6,12 @@ import numpy as np
 import PIL
 import torch
 from packaging import version
-from transformers import CLIPFeatureExtractor, CLIPTokenizer
+from transformers import CLIPImageProcessor, CLIPTokenizer
 
 import diffusers
 from diffusers import OnnxRuntimeModel, OnnxStableDiffusionPipeline, SchedulerMixin
 from diffusers.pipelines.stable_diffusion import StableDiffusionPipelineOutput
-from diffusers.utils import deprecate, logging
+from diffusers.utils import logging
 
 
 try:
@@ -441,7 +441,7 @@ class OnnxStableDiffusionLongPromptWeightingPipeline(OnnxStableDiffusionPipeline
             unet: OnnxRuntimeModel,
             scheduler: SchedulerMixin,
             safety_checker: OnnxRuntimeModel,
-            feature_extractor: CLIPFeatureExtractor,
+            feature_extractor: CLIPImageProcessor,
             requires_safety_checker: bool = True,
         ):
             super().__init__(
@@ -468,7 +468,7 @@ class OnnxStableDiffusionLongPromptWeightingPipeline(OnnxStableDiffusionPipeline
             unet: OnnxRuntimeModel,
             scheduler: SchedulerMixin,
             safety_checker: OnnxRuntimeModel,
-            feature_extractor: CLIPFeatureExtractor,
+            feature_extractor: CLIPImageProcessor,
         ):
             super().__init__(
                 vae_encoder=vae_encoder,
@@ -667,7 +667,7 @@ class OnnxStableDiffusionLongPromptWeightingPipeline(OnnxStableDiffusionPipeline
         return_dict: bool = True,
         callback: Optional[Callable[[int, int, np.ndarray], None]] = None,
         is_cancelled_callback: Optional[Callable[[], bool]] = None,
-        callback_steps: Optional[int] = 1,
+        callback_steps: int = 1,
         **kwargs,
     ):
         r"""
@@ -744,10 +744,6 @@ class OnnxStableDiffusionLongPromptWeightingPipeline(OnnxStableDiffusionPipeline
             list of `bool`s denoting whether the corresponding generated image likely represents "not-safe-for-work"
             (nsfw) content, according to the `safety_checker`.
         """
-        message = "Please use `image` instead of `init_image`."
-        init_image = deprecate("init_image", "0.14.0", message, take_from=kwargs)
-        image = init_image or image
-
         # 0. Default height and width to unet
         height = height or self.unet.config.sample_size * self.vae_scale_factor
         width = width or self.unet.config.sample_size * self.vae_scale_factor
@@ -882,7 +878,7 @@ class OnnxStableDiffusionLongPromptWeightingPipeline(OnnxStableDiffusionPipeline
         output_type: Optional[str] = "pil",
         return_dict: bool = True,
         callback: Optional[Callable[[int, int, np.ndarray], None]] = None,
-        callback_steps: Optional[int] = 1,
+        callback_steps: int = 1,
         **kwargs,
     ):
         r"""
@@ -973,7 +969,7 @@ class OnnxStableDiffusionLongPromptWeightingPipeline(OnnxStableDiffusionPipeline
         output_type: Optional[str] = "pil",
         return_dict: bool = True,
         callback: Optional[Callable[[int, int, np.ndarray], None]] = None,
-        callback_steps: Optional[int] = 1,
+        callback_steps: int = 1,
         **kwargs,
     ):
         r"""
@@ -1065,7 +1061,7 @@ class OnnxStableDiffusionLongPromptWeightingPipeline(OnnxStableDiffusionPipeline
         output_type: Optional[str] = "pil",
         return_dict: bool = True,
         callback: Optional[Callable[[int, int, np.ndarray], None]] = None,
-        callback_steps: Optional[int] = 1,
+        callback_steps: int = 1,
         **kwargs,
     ):
         r"""

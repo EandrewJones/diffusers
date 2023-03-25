@@ -4,7 +4,7 @@ from typing import Callable, List, Optional, Union
 import numpy as np
 import PIL
 import torch
-from transformers import CLIPFeatureExtractor, CLIPTokenizer
+from transformers import CLIPImageProcessor, CLIPTokenizer
 
 from ...configuration_utils import FrozenDict
 from ...schedulers import DDIMScheduler, LMSDiscreteScheduler, PNDMScheduler
@@ -63,7 +63,7 @@ class OnnxStableDiffusionInpaintPipelineLegacy(DiffusionPipeline):
         safety_checker ([`StableDiffusionSafetyChecker`]):
             Classification module that estimates whether generated images could be considered offensive or harmful.
             Please, refer to the [model card](https://huggingface.co/runwayml/stable-diffusion-v1-5) for details.
-        feature_extractor ([`CLIPFeatureExtractor`]):
+        feature_extractor ([`CLIPImageProcessor`]):
             Model that extracts features from generated images to be used as inputs for the `safety_checker`.
     """
     _optional_components = ["safety_checker", "feature_extractor"]
@@ -75,7 +75,7 @@ class OnnxStableDiffusionInpaintPipelineLegacy(DiffusionPipeline):
     unet: OnnxRuntimeModel
     scheduler: Union[DDIMScheduler, PNDMScheduler, LMSDiscreteScheduler]
     safety_checker: OnnxRuntimeModel
-    feature_extractor: CLIPFeatureExtractor
+    feature_extractor: CLIPImageProcessor
 
     def __init__(
         self,
@@ -86,7 +86,7 @@ class OnnxStableDiffusionInpaintPipelineLegacy(DiffusionPipeline):
         unet: OnnxRuntimeModel,
         scheduler: Union[DDIMScheduler, PNDMScheduler, LMSDiscreteScheduler],
         safety_checker: OnnxRuntimeModel,
-        feature_extractor: CLIPFeatureExtractor,
+        feature_extractor: CLIPImageProcessor,
         requires_safety_checker: bool = True,
     ):
         super().__init__()
@@ -239,8 +239,7 @@ class OnnxStableDiffusionInpaintPipelineLegacy(DiffusionPipeline):
         output_type: Optional[str] = "pil",
         return_dict: bool = True,
         callback: Optional[Callable[[int, int, np.ndarray], None]] = None,
-        callback_steps: Optional[int] = 1,
-        **kwargs,
+        callback_steps: int = 1,
     ):
         r"""
         Function invoked when calling the pipeline for generation.
@@ -301,10 +300,6 @@ class OnnxStableDiffusionInpaintPipelineLegacy(DiffusionPipeline):
             list of `bool`s denoting whether the corresponding generated image likely represents "not-safe-for-work"
             (nsfw) content, according to the `safety_checker`.
         """
-        message = "Please use `image` instead of `init_image`."
-        init_image = deprecate("init_image", "0.14.0", message, take_from=kwargs)
-        image = init_image or image
-
         if isinstance(prompt, str):
             batch_size = 1
         elif isinstance(prompt, list):
